@@ -27,7 +27,8 @@ trainer = Trainer(
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                        # turn on mixed precision
     num_samples = 1,
-    save_and_sample_every = 20
+    save_and_sample_every = 20,
+    calculate_fid=False
 )
 
 trainer.train()

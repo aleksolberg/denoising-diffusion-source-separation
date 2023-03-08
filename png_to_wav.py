@@ -4,7 +4,7 @@ from PIL import Image, ImageOps
 import os
 import soundfile as sf
 
-image_folder = 'datasets/randomMIDI/PianoViolin11025/jpeg_amp_only/train'
+image_folder = 'results/sample-9.png'
 wav_folder = 'testing/output'
 
 os.makedirs(wav_folder, exist_ok=True)
