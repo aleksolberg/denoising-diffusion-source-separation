@@ -363,7 +363,7 @@ class Unet(nn.Module):
         self.final_res_block = block_klass(dim * 2, dim, time_emb_dim = time_dim)
         self.final_conv = nn.Conv2d(dim, self.out_dim, 1)
 
-    def forward(self, x, time, y_cond, x_self_cond = None):
+    def forward(self, x, time, y_cond = None, x_self_cond = None):
         if self.self_condition:
             x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
             x = torch.cat((x_self_cond, x), dim = 1)
@@ -583,7 +583,7 @@ class GaussianDiffusion(nn.Module):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def model_predictions(self, x, t, y_cond, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False):
+    def model_predictions(self, x, t, y_cond = None, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False):
         model_output = self.model(x, t, y_cond, x_self_cond)
         maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity
 
@@ -608,7 +608,7 @@ class GaussianDiffusion(nn.Module):
 
         return ModelPrediction(pred_noise, x_start)
 
-    def p_mean_variance(self, x, t, y_cond, x_self_cond = None, clip_denoised = True):
+    def p_mean_variance(self, x, t, y_cond = None, x_self_cond = None, clip_denoised = True):
         preds = self.model_predictions(x, t, y_cond, x_self_cond)
         x_start = preds.pred_x_start
 
@@ -619,7 +619,7 @@ class GaussianDiffusion(nn.Module):
         return model_mean, posterior_variance, posterior_log_variance, x_start
 
     @torch.no_grad()
-    def p_sample(self, x, t: int, y_cond, x_self_cond = None):
+    def p_sample(self, x, t: int, y_cond = None, x_self_cond = None):
         b, *_, device = *x.shape, x.device
         batched_times = torch.full((b,), t, device = x.device, dtype = torch.long)
         model_mean, _, model_log_variance, x_start = self.p_mean_variance(x = x, t = batched_times, y_cond=y_cond, x_self_cond = x_self_cond, clip_denoised = True)
@@ -628,7 +628,7 @@ class GaussianDiffusion(nn.Module):
         return pred_img, x_start
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, y_cond, return_all_timesteps = False):
+    def p_sample_loop(self, shape, y_cond = None, return_all_timesteps = False):
         batch, device = shape[0], self.betas.device
 
         img = torch.randn(shape, device = device)
@@ -647,7 +647,7 @@ class GaussianDiffusion(nn.Module):
         return ret
 
     @torch.no_grad()
-    def ddim_sample(self, shape, y_cond, return_all_timesteps = False):
+    def ddim_sample(self, shape, y_cond = None, return_all_timesteps = False):
         batch, device, total_timesteps, sampling_timesteps, eta, objective = shape[0], self.betas.device, self.num_timesteps, self.sampling_timesteps, self.ddim_sampling_eta, self.objective
 
         times = torch.linspace(-1, total_timesteps - 1, steps = sampling_timesteps + 1)   # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
@@ -689,13 +689,13 @@ class GaussianDiffusion(nn.Module):
         return ret
 
     @torch.no_grad()
-    def sample(self, y_cond, batch_size = 16, return_all_timesteps = False):
+    def sample(self, y_cond = None, batch_size = 16, return_all_timesteps = False):
         image_size, channels = self.image_size, self.channels
         sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
         return sample_fn((batch_size, channels, image_size, image_size), y_cond, return_all_timesteps = return_all_timesteps)
 
     @torch.no_grad()
-    def interpolate(self, x1, x2, y_cond, t = None, lam = 0.5):
+    def interpolate(self, x1, x2, y_cond = None, t = None, lam = 0.5):
         b, *_, device = *x1.shape, x1.device
         t = default(t, self.num_timesteps - 1)
 
@@ -769,12 +769,14 @@ class GaussianDiffusion(nn.Module):
         loss = loss * extract(self.p2_loss_weight, t, loss.shape)
         return loss.mean()
 
-    def forward(self, img, y_cond, *args, **kwargs):
+    def forward(self, img, y_cond = None, *args, **kwargs):
         b, c, h, w, device, img_size, = *img.shape, img.device, self.image_size
         assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
 
         img = self.normalize(img)
+        if self.image_condition is not None:
+            y_cond = self.normalize(y_cond)
         return self.p_losses(img, t, y_cond, *args, **kwargs)
 
 # dataset classes
@@ -783,8 +785,8 @@ class Dataset(Dataset):
     def __init__(
         self,
         source_folder,
-        mix_folder,
         image_size,
+        mix_folder = None,
         exts = ['jpg', 'jpeg', 'png', 'tiff'],
         augment_horizontal_flip = False,
         convert_image_to = None
@@ -817,10 +819,13 @@ class Dataset(Dataset):
     def __getitem__(self, index):
         source_path = self.source_paths[index]
         source_img = Image.open(source_path)
-        mix_path = self.mix_paths[index]
-        mix_img = Image.open(mix_path)
+        if self.mix_folder is not None:
+            mix_path = self.mix_paths[index]
+            mix_img = Image.open(mix_path)
+            return {'source': self.transform(source_img), 'mix': self.transform(mix_img)}
 
-        return {'source': self.transform(source_img), 'mix': self.transform(mix_img)}
+
+        return {'source': self.transform(source_img)}
 
 # trainer class
 
@@ -829,8 +834,8 @@ class Trainer(object):
         self,
         diffusion_model,
         source_folder,
-        mix_folder,
         *,
+        mix_folder = None,
         train_batch_size = 16,
         gradient_accumulate_every = 1,
         augment_horizontal_flip = False,
@@ -850,6 +855,7 @@ class Trainer(object):
         inception_block_idx = 2048
     ):
         super().__init__()
+        self.image_condition = diffusion_model.image_condition
 
         # accelerator
 
@@ -888,7 +894,7 @@ class Trainer(object):
 
         # dataset and dataloader
 
-        self.ds = Dataset(source_folder, mix_folder, self.image_size, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
+        self.ds = Dataset(source_folder, self.image_size, mix_folder=mix_folder, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
         dl = DataLoader(self.ds, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = 0)
 
         dl = self.accelerator.prepare(dl)
@@ -984,7 +990,8 @@ class Trainer(object):
                 for _ in range(self.gradient_accumulate_every):
                     data = next(self.dl)
                     source_data = data['source'].to(device)
-                    mix_data = data['mix'].to(device)
+                    if self.image_condition:
+                        mix_data = data['mix'].to(device)
 
                     with self.accelerator.autocast():
                         loss = self.model(source_data, mix_data)
