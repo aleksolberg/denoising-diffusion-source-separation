@@ -5,7 +5,8 @@ import torchvision
 model = Unet(
     dim = 64,
     dim_mults = (1, 2, 4, 8),
-    channels=1
+    channels=1,
+    image_condition=True
 )
 
 diffusion = GaussianDiffusion(
@@ -14,7 +15,6 @@ diffusion = GaussianDiffusion(
     timesteps = 100,           # number of steps
     sampling_timesteps = 100,   # number of sampling timesteps (using ddim for faster inference [see citation for ddim paper])
     loss_type = 'l1',            # L1 or L2
-    
 )
 
 trainer = Trainer(
@@ -27,7 +27,7 @@ trainer = Trainer(
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                        # turn on mixed precision
     num_samples = 1,
-    save_and_sample_every = 20,
+    save_and_sample_every = 5,
     calculate_fid=False
 )
 
