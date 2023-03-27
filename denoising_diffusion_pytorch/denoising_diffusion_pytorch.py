@@ -895,7 +895,7 @@ class Trainer(object):
         # dataset and dataloader
 
         self.ds = Dataset(source_folder, self.image_size, mix_folder=mix_folder, augment_horizontal_flip = augment_horizontal_flip, convert_image_to = convert_image_to)
-        dl = DataLoader(self.ds, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = 0)
+        dl = DataLoader(self.ds, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
 
         dl = self.accelerator.prepare(dl)
         self.dl = cycle(dl)
