@@ -126,10 +126,8 @@ class UNet(nn.Module):
             data += time_emb[:,:,None,None]
 
         data = self.deconvolutional_layers[-1](torch.cat([data, conv[1]], 1), output_size = in_shape)
-        print(data.shape)
         if self.spectrogram_condition:
             data = self.last_conv(data)
-        print(data.shape)
 
         return data
     
