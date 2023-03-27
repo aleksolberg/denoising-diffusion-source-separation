@@ -63,9 +63,12 @@ class UNet(nn.Module):
             layer = nn.ConvTranspose2d(self.second_layer_channels*2**i, self.second_layer_channels*2**(i-2), 
                                        kernel_size = self.kernel_size, stride=self.stride, padding=self.padding)
             self.deconvolutional_layers.append(layer)
-        layer = nn.ConvTranspose2d(self.second_layer_channels*2, 1, 
+        layer = nn.ConvTranspose2d(self.second_layer_channels*2, self.in_channels, 
                                    kernel_size = self.kernel_size, stride=self.stride, padding=self.padding)
         self.deconvolutional_layers.append(layer)
+
+        if self.spectrogram_condition:
+            self.last_conv = nn.Conv2d(self.in_channels, 1, kernel_size=1)
 
 
         self.deconvolutional_BAD_layers = nn.ModuleList()
@@ -76,6 +79,7 @@ class UNet(nn.Module):
                 nn.Dropout2d(self.dropout[self.num_layers - (i+1)])
             )
             self.deconvolutional_BAD_layers.append(layer)
+
 
         # Time embedding
         self.time_emb_dim = self.second_layer_channels*4
@@ -122,9 +126,10 @@ class UNet(nn.Module):
             data += time_emb[:,:,None,None]
 
         data = self.deconvolutional_layers[-1](torch.cat([data, conv[1]], 1), output_size = in_shape)
-
+        print(data.shape)
         if self.spectrogram_condition:
-            data = data[:, 0]
+            data = self.last_conv(data)
+        print(data.shape)
 
         return data
     
