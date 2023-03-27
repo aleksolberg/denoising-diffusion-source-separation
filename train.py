@@ -1,13 +1,9 @@
-from denoising_diffusion_pytorch import Unet, GaussianDiffusion, Trainer
+from denoising_diffusion_pytorch import GaussianDiffusion, Trainer
 from PIL import Image
 import torchvision
+from unet import UNet
 
-model = Unet(
-    dim = 64,
-    dim_mults = (1, 2, 4, 8),
-    channels=1,
-    image_condition=True
-)
+model = UNet()
 
 diffusion = GaussianDiffusion(
     model,
@@ -27,11 +23,11 @@ trainer = Trainer(
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                        # turn on mixed precision
     num_samples = 1,
-    save_and_sample_every = 5,
+    save_and_sample_every = 100,
     calculate_fid=False
 )
 
 trainer.train()
 
-sampled_image = diffusion.sample(batch_size = 1)
+#sampled_image = diffusion.sample(batch_size = 1, )
 torchvision.utils.save_image(sampled_image, 'spectrogram.png')

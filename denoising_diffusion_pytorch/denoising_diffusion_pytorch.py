@@ -299,7 +299,7 @@ class Unet(nn.Module):
         input_channels = input_channels * (2 if image_condition else 1)
 
         init_dim = default(init_dim, dim)
-        self.init_conv = nn.Conv2d(input_channels, init_dim, 7, padding = 3)
+        self.init_conv = nn.Conv2d(input_channels, init_dim, 5, padding = 2)
 
         dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
@@ -367,6 +367,8 @@ class Unet(nn.Module):
         if self.self_condition:
             x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
             x = torch.cat((x_self_cond, x), dim = 1)
+
+        assert self.image_condition and y_cond is not None, 'y_cond is None'
 
         if self.image_condition:
             x = torch.cat((y_cond, x), dim = 1)
@@ -468,15 +470,13 @@ class GaussianDiffusion(nn.Module):
         auto_normalize = True
     ):
         super().__init__()
-        assert not (type(self) == GaussianDiffusion and model.channels != model.out_dim)
-        assert not model.random_or_learned_sinusoidal_cond
 
         self.model = model
 
         self.channels = self.model.channels
-        self.self_condition = self.model.self_condition
+        self.self_condition = False
         
-        self.image_condition = self.model.image_condition
+        self.image_condition = self.model.spectrogram_condition
 
         self.image_size = image_size
 
@@ -584,7 +584,7 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     def model_predictions(self, x, t, y_cond = None, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False):
-        model_output = self.model(x, t, y_cond, x_self_cond)
+        model_output = self.model(x, t, y_cond)
         maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity
 
         if self.objective == 'pred_noise':
@@ -751,7 +751,7 @@ class GaussianDiffusion(nn.Module):
 
         # predict and take gradient step
 
-        model_out = self.model(x, t, y_cond, x_self_cond,)
+        model_out = self.model(x, t, y_cond)
 
         if self.objective == 'pred_noise':
             target = noise
